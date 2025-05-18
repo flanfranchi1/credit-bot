@@ -17,6 +17,12 @@ class CustomerDataManager:
         self.bases = dict()
 
     def Updater(self):
+        """This method is responsible to ensure that the most updated information will be used on the current run.
+
+        1 - Ensure that network drive is mapped and available
+        2 - Wait for inputs to be the most recent. In case the SQLite database is already updated it runs normally.
+        3 - Load the inputs into memory then call transformations function.
+        4 - Save work done as a SQLite database."""
         while os.path.exists('z:') == False:
             sleep(60)
         while datetime.datetime.fromtimestamp(os.path.getmtime(self.repositorio_arquivos['sapdf'])).date() < datetime.date.today() or datetime.datetime.fromtimestamp(os.path.getmtime(self.caminho_basesql)).date() == datetime.date.today():
@@ -29,6 +35,7 @@ class CustomerDataManager:
         self.SaveToFile()
 
     def FilesLoader(self, nome_base, caminho):
+        """It load Excel Spreadsheets used as inputs into memory for later use.""""""
         if nome_base == 'sapdf':
             self.bases[nome_base] = pd.read_excel(caminho)
         elif nome_base == 'clientesdf':
@@ -45,6 +52,7 @@ class CustomerDataManager:
             self.bases[nome_base] = pd.read_excel(caminho)
 
     def DataProcessing(self):
+    "This is performing a mix of transformations: renaming cols, creating categorical columns, fillin null and so on.
         # Base de Partidas vencidas, consolidação e cálculo de índices:
         self.bases['sapdf'].loc[(self.bases['sapdf']['VencLíquid'] <= str(datetime.date.fromordinal(datetime.date.toordinal(datetime.date.today())-5))) & (self.bases['sapdf']['Compensaç.'].isna() == True) & (self.bases['sapdf']
                                                                                                                                                                                                                 ['BancEmpr'].isna() == False) & (self.bases['sapdf']['Mont.em MI'] > 0) & (self.bases['sapdf']['MP'] == 'N') & (self.bases['sapdf']['Solic.L/C'].isna() == True), 'Vencidos'] = self.bases['sapdf']['Mont.em MI']
@@ -102,7 +110,7 @@ class CustomerDataManager:
                                       'ID SAP.1': 'Cadastro Relacionado'}, axis=1, inplace=True)
 
     def CreditPolicyAppliance(self):
-        '''Interpreta os registros de cada cliente e cria parâmetros que se adequem a política de crédito vigente'''
+        "It effectivelly evaluates customer's data against the credit policy to 'stamp' eligibility on the database that later will be used as input for the robot itself."""
         self.bases['cadastro']['Fluxo'] = 'Clientes Novos'
         self.bases['cadastro'].loc[(self.bases['cadastro']['Frequência de compra'] == 'Frequente') | (
             self.bases['cadastro']['Frequência de compra'] == 'Não Frequente'), 'Fluxo'] = 'Varejo'
@@ -147,11 +155,13 @@ class CustomerDataManager:
                                    == 'Clientes Novos', 'Limite Aprovação Automática'] = 300
 
     def SaveToFile(self):
+        """Save customers'data fully processed on the SQLite database."""
         with sqlite3.connect(os.path.join(self.dir_base, self.caminho_basesql)) as base:
             self.bases['cadastro'].to_sql(
                 name='Cadastro_completo', con=base, if_exists='replace')
 
     def CustomerDataQuery(self, codigo_sap):
+        """This function queries a customer by it's ID on the bot's SQLite database"""
         with sqlite3.connect(os.path.join(self.dir_base, self.caminho_basesql)) as base:
             base_cursor = base.cursor()
             base_cursor.row_factory = sqlite3.Row
@@ -172,6 +182,7 @@ class CustomerDataManager:
         return customer_data
 
     def GravarRegistroHistorico(self, dict_pedido):
+        """TThis function tracks all decisions made by the bot, like a log to be audited whenever there's any contestation."""
         nome_arq = os.path.join(self.dir_base, 'Controle de pedidos - ' + str(datetime.date.today().day).zfill(
             2) + str(datetime.date.today().month).zfill(2) + str(datetime.date.today().year) + '.csv')
         with open(nome_arq, 'a', newline='') as csv_arq:

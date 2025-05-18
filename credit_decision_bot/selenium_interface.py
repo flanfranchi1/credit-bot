@@ -57,19 +57,21 @@ class NavigationRobot:
             self.NovoOrdersQueueAnalisis()
 
     def Login(self):
+        """It fill username & password and proced to login"""
         self.nav.find_element_by_id(
             "txtUsuario").send_keys(self.credenciais[0])
         self.nav.find_element_by_id("txtSenha").send_keys('Si@2023')
         self.nav.find_element_by_id("btnEntrar").click()
 
     def LoadTab(self, path_as_list):
+        """This function receive a menu's route as list and iterates through the CRM's platform menu to reach the expected item and activating it."""
         self.nav.switch_to.parent_frame()
         WebDriverWait(self.nav, self.timeout).until(
             expected_conditions.element_to_be_clickable((By.ID, self.menu_principal_id))).click()
-        frames = [frame.get_attribute(
-            'name') for frame in self.nav.find_elements_by_tag_name('iframe')]
-        WebDriverWait(self.nav, self.timeout).until(
-            expected_conditions.element_to_be_clickable((By.CSS_SELECTOR, 'table.keepMenuOpen')))
+        frames = frame.get_attribute('name')
+        for frame in self.nav.find_elements_by_tag_name('iframe'):
+            WebDriverWait(self.nav, self.timeout).until(
+                expected_conditions.element_to_be_clickable((By.CSS_SELECTOR, 'table.keepMenuOpen')))
         for chunk in path_as_list:
             WebDriverWait(self.nav, self.timeout).until(
                 expected_conditions.element_to_be_clickable((By.CSS_SELECTOR, 'table.keepMenuOpen')))
@@ -89,6 +91,7 @@ class NavigationRobot:
             self.nav.find_element_by_name(self.frames[path_as_list[-1]]))
 
     def SwitchTab(self, tab_title):
+        """This function receive a CRM's platform tab names and iterates trough the objects to activate this table making it visible and interactible"""
         self.nav.switch_to.parent_frame()
         sleep(1)
         WebDriverWait(self.nav, self.timeout).until(
@@ -100,6 +103,7 @@ class NavigationRobot:
             self.nav.find_element_by_name(self.frames[tab_title]))
 
     def NovoOrdersQueueAnalisis(self):
+        """This function fully deal with the order's queue: Keep it updated, evaluate and handle all incoming orders and registries decisions made."""
         while WebDriverWait(self.nav, self.timeout).until(expected_conditions.presence_of_element_located((By.ID, self.info_qtde_pedidos_pendentes_id))).get_attribute('value') == '0':
             self.last_time_updated = datetime.datetime.now()
             sleep(self.queue_refresh_time)
@@ -183,6 +187,7 @@ class Order():
         self.id_btn_liberar_detalhe = 'ctl00_ctl00_ctl00_mbuToolbar_DXI5_Img'
 
     def NonCreditAnalisis(self):
+        """This function define which analysis flow wil lead the current order"""
         if self.dados_pedido['Forma Pgto Ajustada'] in ['Boleto', 'Compensação']:
             return self.PaymentThermAnalisis()
         elif self.dados_pedido['Forma Pgto Ajustada'] == 'Cartão':
@@ -193,6 +198,7 @@ class Order():
             return 'Manual'
 
     def PaymentThermAnalisis(self):
+        """This function define a secondary analysis flow linked with the payment conditions when it comesto financing payments with 'boletos'."""
         if self.dados_pedido['Prazo Pgto'] == 1:
             return 'Automática'
         elif self.dados_pedido['Prazo Pgto'] > 1:
@@ -201,6 +207,7 @@ class Order():
             return saida
 
     def CreditAnalisis(self):
+        """This is a cecondary treatment based on order's parameters"""
         if self.dados_cliente['Pré-filtro'] != 'Dispensado':
             return 'Análise'
         elif self.dados_pedido['Valor total Ajustado'] <= 300:
@@ -217,6 +224,7 @@ class Order():
             return 'Análise'
 
     def AdjustedCreditTrafficLight(self):
+        "It defines if the customers achieve primary conditions for the current credit to be approved or if it eventually needs a detailled or even manual evaluation"
         if self.dados_cliente['Semáforo'] == 'Verde':
             return 'Aprovação'
         elif self.dados_cliente['Semáforo'] == 'Vermelho':
@@ -227,6 +235,7 @@ class Order():
             return 'Cobrança'
 
     def FinalAnswer(self):
+        """This function gather all previous requirements that will define if the credit apply will be automatically approved or else"""
         saida = [self.CreditAnalisis(), self.NonCreditAnalisis()]
         if saida[0] == 'Análise':
             saida[1] = 'Manual'

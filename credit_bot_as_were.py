@@ -38,4 +38,5 @@ datamanager = CustomerDataManager(
 autocred = NavigationRobot(
     webdriver.Firefox(), datamanager, usuario_mercanet, senha_mercanet)
 _thread.start_new_thread(datamanager.Updater, tuple())
+datamanager.Updater()
 autocred.Autoexec()

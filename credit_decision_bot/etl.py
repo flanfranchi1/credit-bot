@@ -52,40 +52,19 @@ class CustomerDataManager:
             self.bases[nome_base] = pd.read_excel(caminho)
 
     def DataProcessing(self):
-    "This is performing a mix of transformations: renaming cols, creating categorical columns, fillin null and so on.
-        # Base de Partidas vencidas, consolidação e cálculo de índices:
-        self.bases['sapdf'].loc[(self.bases['sapdf']['VencLíquid'] <= str(datetime.date.fromordinal(datetime.date.toordinal(datetime.date.today())-5))) & (self.bases['sapdf']['Compensaç.'].isna() == True) & (self.bases['sapdf']
-                                                                                                                                                                                                                ['BancEmpr'].isna() == False) & (self.bases['sapdf']['Mont.em MI'] > 0) & (self.bases['sapdf']['MP'] == 'N') & (self.bases['sapdf']['Solic.L/C'].isna() == True), 'Vencidos'] = self.bases['sapdf']['Mont.em MI']
-        self.bases['sapdf'].loc[(self.bases['sapdf']['VencLíquid'] <= str(datetime.date.fromordinal(datetime.date.toordinal(datetime.date.today())-5))) & (self.bases['sapdf']
-                                                                                                                                                           ['Compensaç.'].isna() == True) & (self.bases['sapdf']['BancEmpr'].isna() == False) & (self.bases['sapdf']['Mont.em MI'] > 0), 'Vencidos'] = self.bases['sapdf']['Mont.em MI']
-        self.bases['sapdf'].loc[(self.bases['sapdf']['VencLíquid'] <= str(datetime.date.fromordinal(datetime.date.toordinal(datetime.date.today())-5))) & (self.bases['sapdf']['Compensaç.'].isna() == True) & (self.bases['sapdf']['BancEmpr'].isna() == False) & (
-            self.bases['sapdf']['Mont.em MI'] > 0) & (self.bases['sapdf']['MP'] == 'N') & (self.bases['sapdf']['Solic.L/C'].isna() == False), 'Vencido em Dias'] = (pd.to_datetime('today') - self.bases['sapdf']['VencLíquid']).astype('timedelta64[D]')
-        # self.bases['sapdf'].loc[(self.bases['sapdf']['VencLíquid'] <= '2020-03-17') & (self.bases['sapdf']['Compensaç.'].isna() == True) & (self.bases['sapdf']['Chave referência 3'].isna() == False) & (self.bases['sapdf']['Mont.em MI'] > 0), 'Vencidos Pré-Covid19'] = self.bases['sapdf']['Mont.em MI']
-        self.bases['sapdf'].loc[self.bases['sapdf']['Mont.em MI']
-                                < 0, 'Créditos'] = -self.bases['sapdf']['Mont.em MI']
-        self.bases['sapdf'] = self.bases['sapdf'].groupby('Cliente').agg(
-            {'Mont.em MI': sum, 'Créditos': sum, 'Vencidos': [sum, 'count'], 'Vencido em Dias': max})
-        self.bases['sapdf'].rename(
-            {'Mont.em MI': 'Exposição Total', 'Vencido em Dias': 'Maior Atraso em Dias'}, axis=1, inplace=True)
-        # Base Cadastral de clientes - Limpeza:
-        self.bases['clientesdf'] = self.bases['clientesdf'][(
-            self.bases['clientesdf']['Cod Sap'] <= 999999)]
-        self.bases['clientesdf'].drop(['Fantasia', 'Endereço', 'Nro', 'Complemento', 'Bairro', 'Cep',
-                                      'País', 'Telefone', 'Celular', 'Email', 'CRO', 'Paciente Inst Ensino'], axis=1, inplace=True)
-        self.bases['clientesdf'].fillna({'Tipo de cliente': 'Varejo', 'Ramo de atividade': 'Consultório',
-                                        'Frequência de compra': 'Sem Histórico', 'Segmentação': 'Sem Histórico'}, inplace=True)
-        # self.bases['clientesdf']['Data Cadastro'].fillna(method='ffill', inplace=True)
-        self.bases['renegdf'] = self.bases['renegdf'][[
-            'Cliente', 'Nº documento']].groupby('Cliente')['Nº documento'].nunique()
-        self.bases['renegdf'].rename('Total Renegs', inplace=True)
+        "This is performing a mix of transformations: renaming cols, creating categorical columns, fillin null and so on.
+        current_financials = self.treasury_payment_position_adjustments()
+        customers = self.customers_database_clean()        
+        renegotiations = self.renegotiation_database_adjustments()
+
         self.bases['cadastro'] = pd.merge(
-            self.bases['clientesdf'], self.bases['prefiltrodf'], left_on='Cod Sap', right_on='Código', how='left')
+            customers, self.bases['prefiltrodf'], left_on='Cod Sap', right_on='Código', how='left')
         self.bases['cadastro'] = pd.merge(
             self.bases['cadastro'], self.bases['fatdf'], left_on='Cod Sap', right_on='ID parc.', how='left')
         self.bases['cadastro'] = pd.merge(
-            self.bases['cadastro'], self.bases['renegdf'], left_on='Cod Sap', right_on='Cliente', how='left')
+            self.bases['cadastro'], renegotiations, left_on='Cod Sap', right_on='Cliente', how='left')
         self.bases['cadastro'] = pd.merge(
-            self.bases['cadastro'], self.bases['sapdf'], left_on='Cod Sap', right_on='Cliente', how='left')
+            self.bases['cadastro'], current_financials, left_on='Cod Sap', right_on='Cliente', how='left')
         # self.bases['cadastro'] = pd.merge(self.bases['cadastro'], self.bases['covid19'][['Código', 'Qtde Boletos Pagos', 'Índice de Pontualidade Ponderada por Faixa']], how='left')
         del self.bases['sapdf'], self.bases['clientesdf'], self.bases['renegdf'], self.bases['fatdf'], self.bases['prefiltrodf']
         self.bases['cadastro'].drop(['ID parc.', 'Nome 1', 'x', 'Código', 'Cod. Regional', 'Consultor interno no mercanet', 'Canal 1', 'Canal 2', 'Canal 3',
@@ -94,20 +73,48 @@ class CustomerDataManager:
         self.bases['cadastro'][('Vencidos', 'count')].fillna(0, inplace=True)
         self.bases['cadastro'][('Maior Atraso em Dias', 'max')].fillna(
             0, inplace=True)
-        '''self.bases['cadastro'][('Total dos Vencidos Pré-Covid19', 'sum')].fillna(0, inplace=True)
-        self.bases['cadastro'][('Total dos Vencidos Pré-Covid19', 'count')].fillna(0, inplace=True)'''
         self.bases['cadastro'][('Créditos', 'sum')].fillna(0, inplace=True)
         self.bases['cadastro']['Valor Faturado'].fillna(0, inplace=True)
         self.bases['cadastro']['Total Renegs'].fillna(0, inplace=True)
         self.bases['cadastro'][('Exposição Total', 'sum')
                                ].fillna(0, inplace=True)
-        # self.bases['cadastro'][['Qtde Boletos Pagos', 'Índice de Pontualidade Ponderada por Faixa']].fillna(0, inplace=True)
         self.bases['cadastro']['Mensagem'].fillna('Dispensado', inplace=True)
         self.bases['cadastro'] = pd.merge(self.bases['cadastro'], self.bases['correldf'][[
                                           'ID SAP', 'ID SAP.1']], left_on='Cod Sap', right_on='ID SAP', how='left')
         self.bases['cadastro'].drop('ID SAP', inplace=True, axis=1)
         self.bases['cadastro'].rename({'Mensagem': 'Pré-filtro', 'Descrição': 'Obs Pré-filtro',
                                       'ID SAP.1': 'Cadastro Relacionado'}, axis=1, inplace=True)
+
+    def treasury_payment_position_adjustments(self):
+            # Base de Partidas vencidas, consolidação e cálculo de índices:
+        self.bases['sapdf'].loc[(self.bases['sapdf']['VencLíquid'] <= str(datetime.date.fromordinal(datetime.date.toordinal(datetime.date.today())-5))) & (self.bases['sapdf']['Compensaç.'].isna() == True) & (self.bases['sapdf']
+                                                                                                                                                                                                                ['BancEmpr'].isna() == False) & (self.bases['sapdf']['Mont.em MI'] > 0) & (self.bases['sapdf']['MP'] == 'N') & (self.bases['sapdf']['Solic.L/C'].isna() == True), 'Vencidos'] = self.bases['sapdf']['Mont.em MI']
+        self.bases['sapdf'].loc[(self.bases['sapdf']['VencLíquid'] <= str(datetime.date.fromordinal(datetime.date.toordinal(datetime.date.today())-5))) & (self.bases['sapdf']
+                                                                                                                                                           ['Compensaç.'].isna() == True) & (self.bases['sapdf']['BancEmpr'].isna() == False) & (self.bases['sapdf']['Mont.em MI'] > 0), 'Vencidos'] = self.bases['sapdf']['Mont.em MI']
+        self.bases['sapdf'].loc[(self.bases['sapdf']['VencLíquid'] <= str(datetime.date.fromordinal(datetime.date.toordinal(datetime.date.today())-5))) & (self.bases['sapdf']['Compensaç.'].isna() == True) & (self.bases['sapdf']['BancEmpr'].isna() == False) & (
+            self.bases['sapdf']['Mont.em MI'] > 0) & (self.bases['sapdf']['MP'] == 'N') & (self.bases['sapdf']['Solic.L/C'].isna() == False), 'Vencido em Dias'] = (pd.to_datetime('today') - self.bases['sapdf']['VencLíquid']).astype('timedelta64[D]')
+            self.bases['sapdf'].loc[self.bases['sapdf']['Mont.em MI']
+                                < 0, 'Créditos'] = -self.bases['sapdf']['Mont.em MI']
+        self.bases['sapdf'] = self.bases['sapdf'].groupby('Cliente').agg(
+            {'Mont.em MI': sum, 'Créditos': sum, 'Vencidos': [sum, 'count'], 'Vencido em Dias': max})
+        self.bases['sapdf'].rename(
+            {'Mont.em MI': 'Exposição Total', 'Vencido em Dias': 'Maior Atraso em Dias'}, axis=1, inplace=True)
+        return self.bases['sapdf']
+
+    def customers_database_clean(self):
+        self.bases['clientesdf'] = self.bases['clientesdf'][(
+        self.bases['clientesdf']['Cod Sap'] <= 999999)]
+        self.bases['clientesdf'].drop(['Fantasia', 'Endereço', 'Nro', 'Complemento', 'Bairro', 'Cep',
+                                      'País', 'Telefone', 'Celular', 'Email', 'CRO', 'Paciente Inst Ensino'], axis=1, inplace=True)
+        self.bases['clientesdf'].fillna({'Tipo de cliente': 'Varejo', 'Ramo de atividade': 'Consultório',
+                                        'Frequência de compra': 'Sem Histórico', 'Segmentação': 'Sem Histórico'}, inplace=True)
+        return self.bases['clientesdf']
+
+    def renegotiation_database_adjustments(self):
+        self.bases['renegdf'] = self.bases['renegdf'][[
+                'Cliente', 'Nº documento']].groupby('Cliente')['Nº documento'].nunique()
+        self.bases['renegdf'].rename('Total Renegs', inplace=True)
+        return self.bases['renegdf']
 
     def CreditPolicyAppliance(self):
         "It effectivelly evaluates customer's data against the credit policy to 'stamp' eligibility on the database that later will be used as input for the robot itself."""
